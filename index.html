@@ -173,6 +173,18 @@ dialog::backdrop { background: rgba(0,0,0,.7); }
 #msg { font-size: 13px; color: var(--alert); min-height: 1em; }
 
 
+/* in-page audio player */
+.pod .now { margin-bottom: 8px; padding: 8px; border-left: 3px solid var(--a1); background: color-mix(in srgb, var(--a1) 9%, transparent); display: none; flex-direction: column; gap: 6px; }
+.pod .now.on { display: flex; }
+.pod .now .ttl { font-size: 12.5px; line-height: 1.3; color: #e8f4f8; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pod .now audio { width: 100%; height: 34px; color-scheme: dark; }
+.pod .now .skip { display: flex; gap: 6px; }
+.pod .now .skip button { flex: 1; background: transparent; color: var(--a1); border: 1px solid color-mix(in srgb, var(--a1) 60%, transparent); border-radius: 2px; padding: 5px 0; font-size: 11.5px; letter-spacing: .1em; cursor: pointer; }
+.pod .showhead { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; }
+.pod .showhead img { width: 44px; height: 44px; border-radius: 4px; background: #1b2830; flex: none; }
+.pod .showhead .nm { font-size: 13px; line-height: 1.25; color: #e8f4f8; flex: 1; }
+.pod .eps button.cur { border-left-color: #fff; background: color-mix(in srgb, var(--a1) 22%, transparent); }
+
 /* photo adjust */
 .photo .ptools { position: absolute; left: 22px; right: 22px; bottom: 16px; z-index: 4; display: none; gap: 6px; flex-wrap: wrap; align-items: center; }
 .photo.adj .ptools { display: flex; }
@@ -510,28 +522,18 @@ dialog::backdrop { background: rgba(0,0,0,.7); }
   }
   drawStocks(); window.__stocksReady = true;
 
-  /* ---------- podcast: search (Apple Podcasts catalog, free) + player ---------- */
+  /* ---------- podcast: search (Apple Podcasts directory, free) + in-page player ---------- */
   var pbox = $("pod");
   pbox.innerHTML = '<div class="lbl">Audio archive</div>' +
     '<form class="psearch" id="psf" autocomplete="off"><input id="psq" type="search" placeholder="Search podcasts" aria-label="Search podcasts"><button type="submit">Search</button></form>' +
+    '<div class="now" id="now"><div class="ttl" id="nowTtl"></div><audio id="aud" controls preload="none"></audio>' +
+    '<div class="skip"><button type="button" id="back15">&minus;15 s</button><button type="button" id="fwd30">+30 s</button></div></div>' +
     '<div class="pbody" id="pbody"></div>';
-  var pbody = $("pbody");
+  var pbody = $("pbody"), aud = $("aud"), playingUrl = "";
+  $("back15").onclick = function () { aud.currentTime = Math.max(0, aud.currentTime - 15); };
+  $("fwd30").onclick = function () { aud.currentTime = aud.currentTime + 30; };
   function note(html) { var n = document.createElement("div"); n.className = "pnote"; n.innerHTML = html; return n; }
-  function showPlayer() {
-    pbody.innerHTML = "";
-    if (cfg.player && cfg.player.url) {
-      var f = document.createElement("iframe");
-      f.src = cfg.player.url; f.title = "Podcast player";
-      f.allow = "autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"; f.loading = "lazy";
-      pbody.appendChild(f);
-    } else {
-      var e = document.createElement("div"); e.className = "empty";
-      e.innerHTML = "<p>No podcast loaded. Search above, tap a result, and it plays here.</p>";
-      pbody.appendChild(e);
-    }
-    pbody.appendChild(note('Search uses Apple Podcasts. For a Spotify show, paste its link in <button type="button" id="toSet">Settings</button>.'));
-    var t = $("toSet"); if (t) t.onclick = function () { $("settingsBtn").click(); };
-  }
+  function https(u) { return (u || "").replace(/^http:\/\//i, "https://"); }
   function jsonp(url) {
     return new Promise(function (res, rej) {
       var cb = "__pc" + Date.now(), sc = document.createElement("script"), done = false;
@@ -541,8 +543,53 @@ dialog::backdrop { background: rgba(0,0,0,.7); }
       setTimeout(function () { if (!done) rej(); }, 10000);
     });
   }
-  function toEmbed(u) {
-    try { var x = new URL(u); x.host = "embed.podcasts.apple.com"; x.search = "?theme=dark"; return x.toString(); } catch (e) { return null; }
+  function fmtDur(ms) { if (!ms) return ""; var m = Math.round(ms / 60000); return m >= 60 ? Math.floor(m / 60) + " h " + (m % 60) + " min" : m + " min"; }
+  function playEpisode(ep) {
+    playingUrl = https(ep.episodeUrl);
+    aud.src = playingUrl; $("nowTtl").textContent = ep.trackName; $("now").classList.add("on");
+    var p = aud.play(); if (p && p.catch) p.catch(function () {});
+    try { if (navigator.mediaSession) navigator.mediaSession.metadata = new MediaMetadata({ title: ep.trackName, artist: ep.collectionName || "", artwork: [{ src: ep.artworkUrl160 || ep.artworkUrl600 || "" }] }); } catch (e) {}
+    Array.prototype.forEach.call(pbody.querySelectorAll(".eps button"), function (b) { b.classList.toggle("cur", b.getAttribute("data-u") === playingUrl); });
+  }
+  function showEpisodes() {
+    var sh = cfg.show;
+    pbody.innerHTML = "";
+    var head = document.createElement("div"); head.className = "showhead";
+    head.innerHTML = '<img alt=""><div class="nm"></div>';
+    head.firstChild.src = sh.art || ""; head.querySelector(".nm").textContent = sh.name;
+    pbody.appendChild(head);
+    pbody.appendChild(note("Loading episodes…"));
+    jsonp("https://itunes.apple.com/lookup?entity=podcastEpisode&limit=30&id=" + encodeURIComponent(sh.id)).then(function (d) {
+      var eps = (d.results || []).filter(function (r) { return r.episodeUrl; });
+      pbody.removeChild(pbody.lastChild);
+      if (!eps.length) { pbody.appendChild(note("No playable episodes found for this show.")); return; }
+      var ul = document.createElement("ul"); ul.className = "results eps";
+      eps.forEach(function (ep) {
+        var li = document.createElement("li"), b = document.createElement("button"); b.type = "button"; b.setAttribute("data-u", https(ep.episodeUrl));
+        if (https(ep.episodeUrl) === playingUrl) b.className = "cur";
+        var t = document.createElement("span"), n1 = document.createElement("span"), n2 = document.createElement("span");
+        n1.className = "nm"; n1.textContent = ep.trackName;
+        n2.className = "au"; n2.textContent = [new Date(ep.releaseDate).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" }), fmtDur(ep.trackTimeMillis)].filter(Boolean).join("  ·  ");
+        t.appendChild(n1); t.appendChild(n2); b.appendChild(t); li.appendChild(b); ul.appendChild(li);
+        b.onclick = function () { playEpisode(ep); };
+      });
+      pbody.appendChild(ul);
+    }).catch(function () { pbody.removeChild(pbody.lastChild); pbody.appendChild(note("Couldn't load episodes. Check your connection and try again.")); });
+  }
+  function showPlayer() {
+    if (cfg.player && cfg.player.url) {
+      pbody.innerHTML = "";
+      var f = document.createElement("iframe");
+      f.src = cfg.player.url; f.title = "Podcast player";
+      f.allow = "autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"; f.loading = "lazy";
+      pbody.appendChild(f);
+      return;
+    }
+    if (cfg.show && cfg.show.id) { showEpisodes(); return; }
+    pbody.innerHTML = "";
+    var e = document.createElement("div"); e.className = "empty";
+    e.innerHTML = "<p>No podcast loaded. Search above, pick a show, then tap an episode. It plays right here.</p>";
+    pbody.appendChild(e);
   }
   $("psf").onsubmit = function (e) {
     e.preventDefault();
@@ -550,7 +597,7 @@ dialog::backdrop { background: rgba(0,0,0,.7); }
     pbody.innerHTML = ""; pbody.appendChild(note("Searching…"));
     jsonp("https://itunes.apple.com/search?media=podcast&entity=podcast&limit=8&term=" + encodeURIComponent(q)).then(function (d) {
       pbody.innerHTML = "";
-      var list = (d.results || []).filter(function (r) { return r.collectionViewUrl; });
+      var list = (d.results || []).filter(function (r) { return r.collectionId; });
       if (!list.length) { pbody.appendChild(note("No podcasts found. Try different words.")); return; }
       var ul = document.createElement("ul"); ul.className = "results";
       list.forEach(function (r) {
@@ -560,16 +607,16 @@ dialog::backdrop { background: rgba(0,0,0,.7); }
         n1.className = "nm"; n1.textContent = r.collectionName; n2.className = "au"; n2.textContent = r.artistName;
         t.appendChild(n1); t.appendChild(n2); b.appendChild(img); b.appendChild(t); li.appendChild(b); ul.appendChild(li);
         b.onclick = function () {
-          var u = toEmbed(r.collectionViewUrl); if (!u) return;
-          cfg.player = { url: u, name: r.collectionName }; save(); showPlayer();
+          cfg.show = { id: r.collectionId, name: r.collectionName, art: r.artworkUrl100 || "" };
+          delete cfg.player; save(); showPlayer();
         };
       });
       pbody.appendChild(ul);
-      if (cfg.player) { var back = document.createElement("div"); back.className = "pnote"; back.innerHTML = '<button type="button" id="pBack">Back to player</button>'; pbody.appendChild(back); $("pBack").onclick = showPlayer; }
+      if (cfg.show || cfg.player) { var back = document.createElement("div"); back.className = "pnote"; back.innerHTML = '<button type="button" id="pBack">Back to current show</button>'; pbody.appendChild(back); $("pBack").onclick = showPlayer; }
     }).catch(function () { pbody.innerHTML = ""; pbody.appendChild(note("Couldn't reach the podcast search. Check your connection and try again.")); });
   };
   // keep an older saved Spotify link working
-  if (!cfg.player && cfg.spotify) { $("spIn").value = cfg.spotify; $("spIn").onchange({ target: $("spIn") }); }
+  if (!cfg.player && !cfg.show && cfg.spotify) { $("spIn").value = cfg.spotify; $("spIn").onchange({ target: $("spIn") }); }
   showPlayer();
 
   /* ---------- photo slideshow ---------- */
