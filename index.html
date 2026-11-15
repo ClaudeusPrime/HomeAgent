@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home Display</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* layout: 4 columns. Row 1 weather, clock, photo. Rows 2-3 forecast, stocks, today, audio on the right. */
+  --bg: #04070a;
+  --tile: #0d151b;
+  --tile-ink: #d3eef7;
+  --muted: #6f8d9a;
+  --a1: #3fd0ff;
+  --a2: #1b6f8f;
+  --on-accent: #d3eef7;
+  --alert: #ff4a3d;
+  --up: #36e08a;
+  --down: #ff5a4a;
+  --font-display: "Orbitron", "Eurostile", "Arial Narrow", sans-serif;
+  --font-body: "Share Tech Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; margin: 0; }
+html, body { height: 100%; }
+body {
+  background:
+    radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--a1) 10%, transparent), transparent 60%),
+    var(--bg);
+  color: var(--tile-ink); font-family: var(--font-body); padding: 16px; overflow: hidden; letter-spacing: .02em;
+}
+/* scanlines + vignette over everything */
+body::after {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 20;
+  background:
+    repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0, rgba(0,0,0,0) 2px, rgba(0,0,0,.16) 3px),
+    radial-gradient(ellipse at center, rgba(0,0,0,0) 60%, rgba(0,0,0,.45) 100%);
+}
+
+.grid {
+  height: 100%; display: grid; gap: 14px;
+  grid-template-columns: 1fr 1fr 1fr 1.15fr;
+  grid-template-rows: 1.25fr 1fr 1.1fr;
+  grid-template-areas:
+    "wx    clock photo photo"
+    "fc    stocks stocks pod"
+    "today today today pod";
+}
+.tile {
+  position: relative; overflow: hidden; min-height: 0; padding: 30px 22px 18px;
+  background: linear-gradient(165deg, color-mix(in srgb, var(--a1) 9%, var(--tile)), var(--tile) 55%);
+  color: var(--tile-ink);
+  border: 1px solid color-mix(in srgb, var(--a1) 38%, transparent);
+  border-radius: 4px;
+  box-shadow: inset 0 0 30px color-mix(in srgb, var(--a1) 7%, transparent), 0 0 18px color-mix(in srgb, var(--a1) 10%, transparent);
+}
+/* corner brackets */
+.tile::before, .tile::after { content: ""; position: absolute; width: 16px; height: 16px; border: 2px solid var(--a1); pointer-events: none; z-index: 3; }
+.tile::before { top: 5px; left: 5px; border-right: 0; border-bottom: 0; }
+.tile::after  { bottom: 5px; right: 5px; border-left: 0; border-top: 0; }
+/* panel label strip */
+.lbl, h2 {
+  position: absolute; top: 9px; left: 26px; right: 26px; display: flex; justify-content: space-between; align-items: center;
+  font-family: var(--font-body); font-size: 11.5px; letter-spacing: .22em; text-transform: uppercase; font-weight: 400; color: var(--a1);
+  z-index: 4;
+}
+.lbl::after, h2::after { content: ""; flex: 1; height: 1px; margin-left: 10px; background: linear-gradient(90deg, color-mix(in srgb, var(--a1) 60%, transparent), transparent); }
+button, input, select { font: inherit; }
+:focus-visible { outline: 2px solid var(--a1); outline-offset: 2px; }
+.link { background: none; border: 0; color: var(--a1); text-decoration: underline; cursor: pointer; padding: 2px 0; font-size: 12px; }
+
+/* weather */
+.wx { grid-area: wx; display: flex; flex-direction: column; justify-content: space-between; }
+.wx .temp { font-family: var(--font-display); font-weight: 500; font-size: clamp(48px, 6.6vw, 98px); line-height: 1; letter-spacing: 0; text-shadow: 0 0 18px color-mix(in srgb, var(--a1) 55%, transparent); }
+.wx .cond { font-size: clamp(14px, 1.6vw, 20px); text-transform: uppercase; letter-spacing: .12em; color: var(--a1); margin-top: 4px; }
+.wx .place { color: var(--muted); font-size: 13px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; text-transform: uppercase; letter-spacing: .08em; }
+.wx .hl { color: var(--tile-ink); }
+
+/* clock */
+.clock { grid-area: clock; display: grid; place-items: center; padding: 28px 12px 34px; }
+.clock svg { width: 100%; height: 100%; max-height: 100%; filter: drop-shadow(0 0 6px color-mix(in srgb, var(--a1) 45%, transparent)); }
+.clock .digital { position: absolute; bottom: 12px; left: 0; right: 0; text-align: center; font-family: var(--font-display); font-size: 14px; letter-spacing: .15em; color: var(--a1); font-variant-numeric: tabular-nums; }
+.face-ring { fill: var(--a1); fill-opacity: .06; stroke: var(--a1); stroke-opacity: .7; stroke-width: 1.5; }
+.tk { stroke: var(--a1); stroke-linecap: round; }
+.hand { stroke: var(--tile-ink); stroke-linecap: round; }
+.sec { stroke: var(--alert); stroke-linecap: round; }
+.hub { fill: var(--alert); }
+
+/* photo */
+.photo { grid-area: photo; padding: 0; background: #0a0f13; }
+.photo .slide { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: 0; transition: opacity 1.4s ease; filter: saturate(.78) contrast(1.08) brightness(.92); }
+.photo .slide.on { opacity: 1; }
+.photo .tint { position: absolute; inset: 0; z-index: 1; background: linear-gradient(to bottom, color-mix(in srgb, var(--a1) 14%, transparent), transparent 35%, rgba(0,0,0,.35)); mix-blend-mode: normal; pointer-events: none; }
+.photo .lbl { background: rgba(4,7,10,.55); padding: 3px 8px; left: 26px; right: auto; width: auto; }
+.photo .lbl::after { display: none; }
+.photo .add { position: absolute; right: 22px; bottom: 16px; z-index: 4; background: rgba(4,7,10,.72); color: var(--a1); border: 1px solid var(--a1); border-radius: 2px; padding: 7px 14px; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; cursor: pointer; }
+.photo input[type=file] { display: none; }
+
+/* forecast */
+.fc { grid-area: fc; display: flex; flex-direction: column; gap: 10px; }
+.fc .row { flex: 1; display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; align-items: center; text-align: center; }
+.fc .hr { display: flex; flex-direction: column; gap: 4px; }
+.fc .hr .t { font-size: 11px; color: var(--muted); letter-spacing: .08em; }
+.fc .hr .ic { font-size: clamp(18px, 2.3vw, 30px); line-height: 1.1; filter: grayscale(.35); }
+.fc .hr .d { font-family: var(--font-display); font-size: clamp(13px, 1.5vw, 19px); font-variant-numeric: tabular-nums; }
+
+/* stocks */
+.stocks { grid-area: stocks; display: flex; flex-direction: column; gap: 8px; }
+.stocks .tv { flex: 1; min-height: 0; margin: 0 -10px -6px; }
+.stocks .tv .tradingview-widget-container, .stocks .tv .tradingview-widget-container__widget { height: 100%; width: 100%; }
+.stocks .tv iframe { border: 0; }
+.stocks .note { font-size: 13px; color: var(--muted); line-height: 1.4; }
+
+/* audio */
+.pod { grid-area: pod; padding: 30px 12px 12px; background: #090d10; display: flex; flex-direction: column; }
+.pod iframe { flex: 1; width: 100%; border: 0; border-radius: 10px; min-height: 152px; }
+.pod .empty { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 12px; padding: 12px; }
+.pod .empty p { font-size: 14px; line-height: 1.5; color: var(--tile-ink); }
+.pod .empty button { align-self: flex-start; background: transparent; color: var(--a1); border: 1px solid var(--a1); border-radius: 2px; padding: 9px 16px; letter-spacing: .12em; text-transform: uppercase; font-size: 12px; cursor: pointer; }
+
+/* today */
+.today { grid-area: today; display: grid; grid-template-columns: 170px 1fr; gap: 22px; align-items: stretch; }
+.date { display: flex; flex-direction: column; justify-content: center; }
+.date .dow { font-size: 12px; letter-spacing: .24em; text-transform: uppercase; color: var(--a1); }
+.date .num { font-family: var(--font-display); font-size: clamp(48px, 6vw, 86px); line-height: 1; text-shadow: 0 0 16px color-mix(in srgb, var(--a1) 50%, transparent); }
+.date .mon { font-size: 14px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.events { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.events ul { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 5px; overflow-y: auto; min-height: 0; flex: 1; }
+.events li { display: flex; align-items: center; gap: 14px; border-left: 3px solid var(--a1); background: color-mix(in srgb, var(--a1) 9%, transparent); padding: 7px 12px; font-size: clamp(13px, 1.5vw, 17px); }
+.events li .tm { color: var(--a1); min-width: 80px; font-variant-numeric: tabular-nums; }
+.events li .tx { flex: 1; }
+.events li button { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 18px; padding: 2px 8px; }
+.events .empty { color: var(--muted); font-size: 14px; padding: 6px 2px; background: none; border: 0; }
+.events form { display: flex; gap: 8px; }
+.events input { background: color-mix(in srgb, var(--tile-ink) 8%, transparent); border: 1px solid color-mix(in srgb, var(--a1) 40%, transparent); border-radius: 2px; padding: 8px 12px; color: var(--tile-ink); min-width: 0; }
+.events input::placeholder { color: var(--muted); }
+.events input.when { width: 100px; }
+.events input.what { flex: 1; }
+.events form button { background: var(--a1); color: #04070a; border: 0; border-radius: 2px; padding: 8px 16px; letter-spacing: .12em; text-transform: uppercase; font-size: 12px; cursor: pointer; }
+
+/* toolbar */
+.bar { position: fixed; top: 3px; right: 10px; display: flex; gap: 4px; z-index: 30; }
+.bar button { background: rgba(4,7,10,.7); color: var(--a1); border: 1px solid color-mix(in srgb, var(--a1) 50%, transparent); border-radius: 2px; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; padding: 4px 10px; cursor: pointer; opacity: .65; }
+.bar button:hover, .bar button:focus-visible { opacity: 1; }
+
+/* dialogs */
+dialog { border: 1px solid var(--a1); border-radius: 4px; padding: 0; background: var(--tile); color: var(--tile-ink); width: min(94vw, 520px); max-height: 90vh; font-family: var(--font-body); }
+dialog::backdrop { background: rgba(0,0,0,.7); }
+.dbody { padding: 22px; display: flex; flex-direction: column; gap: 18px; max-height: 90vh; overflow-y: auto; }
+.dbody h3 { font-family: var(--font-display); font-size: 18px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--a1); }
+.dbody h4 { font-size: 11.5px; letter-spacing: .22em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; font-weight: 400; }
+.dbody label { font-size: 13px; display: block; margin-bottom: 4px; }
+.dbody input[type=text] { width: 100%; border: 1px solid color-mix(in srgb, var(--a1) 55%, transparent); border-radius: 2px; padding: 10px 12px; background: color-mix(in srgb, var(--tile-ink) 8%, var(--bg)); color: var(--tile-ink); }
+.dbody .hint { font-size: 12px; color: var(--muted); margin-top: 5px; line-height: 1.45; }
+.dbody .hint a { color: var(--a1); }
+.swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.sw { border: 2px solid transparent; border-radius: 3px; width: 76px; padding: 3px; background: none; cursor: pointer; text-align: center; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--tile-ink); font-family: var(--font-body); }
+.sw span.chip { display: block; height: 34px; border-radius: 2px; margin-bottom: 4px; }
+.sw[aria-pressed="true"] { border-color: var(--a1); }
+.pick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.pick label { font-size: 11px; text-align: center; margin: 0; letter-spacing: .06em; }
+.pick input { width: 100%; height: 38px; border: 1px solid color-mix(in srgb, var(--a1) 55%, transparent); border-radius: 2px; padding: 2px; background: var(--bg); cursor: pointer; }
+.dbtns { display: flex; gap: 8px; justify-content: flex-end; }
+.dbtns button { border: 1px solid var(--a1); border-radius: 2px; padding: 9px 18px; cursor: pointer; letter-spacing: .14em; text-transform: uppercase; font-size: 12px; background: transparent; color: var(--a1); }
+.dbtns .go { background: var(--a1); color: #04070a; }
+#msg { font-size: 13px; color: var(--alert); min-height: 1em; }
+
+@media (max-width: 860px) {
+  body { overflow: auto; padding: 12px; height: auto; }
+  html { height: auto; }
+  .grid { height: auto; grid-template-columns: 1fr 1fr; grid-template-rows: none;
+    grid-template-areas: "wx wx" "clock clock" "fc fc" "photo photo" "stocks stocks" "pod pod" "today today"; }
+  .tile { min-height: 150px; }
+  .clock { height: 280px; }
+  .photo { height: 240px; }
+  .pod { height: 360px; }
+  .stocks { height: 360px; }
+  .today { grid-template-columns: 1fr; gap: 10px; }
+  .date { flex-direction: row; align-items: baseline; gap: 12px; }
+  .date .num { font-size: 46px; }
+  .bar { position: absolute; }
+}
+@media (prefers-reduced-motion: reduce) { .photo .slide { transition: none; } }
+</style>
+</head>
+<body>
+<div class="bar">
+  <button type="button" id="fs">Full screen</button>
+  <button type="button" id="settingsBtn">Settings</button>
+</div>
+
+<main class="grid">
+  <section class="tile wx" aria-label="Weather">
+    <div class="lbl">Atmospherics</div>
+    <div>
+      <div class="temp" id="temp">--°</div>
+      <div class="cond" id="cond">Loading weather…</div>
+    </div>
+    <div class="place">
+      <span id="place">Grand Junction, CO</span>
+      <span id="hilo"></span>
+      <button class="link" id="chg" type="button">Change city</button>
+    </div>
+  </section>
+
+  <section class="tile clock" aria-label="Clock">
+    <div class="lbl">Chronometer</div>
+    <svg id="face" viewBox="0 0 200 200" role="img" aria-label="Analog clock"></svg>
+    <div class="digital" id="digital"></div>
+  </section>
+
+  <section class="tile photo" aria-label="Photos" id="photo">
+    <div class="tint"></div>
+    <div class="lbl">Surveillance feed</div>
+    <label class="add" for="files">Load images</label>
+    <input id="files" type="file" accept="image/*" multiple>
+  </section>
+
+  <section class="tile fc" aria-label="Forecast">
+    <h2>Forecast +5h</h2>
+    <div class="row" id="hours"></div>
+  </section>
+
+  <section class="tile stocks" aria-label="Stocks">
+    <h2>Market traffic</h2>
+    <div class="tv" id="tv"></div>
+  </section>
+
+  <section class="tile pod" aria-label="Podcast" id="pod"></section>
+
+  <section class="tile today" aria-label="Today">
+    <div class="date">
+      <div class="dow" id="dow"></div>
+      <div class="num" id="dnum"></div>
+      <div class="mon" id="dmon"></div>
+    </div>
+    <div class="events">
+      <h2>Daily orders</h2>
+      <ul id="evlist"></ul>
+      <form id="evform" autocomplete="off">
+        <input class="when" id="evwhen" placeholder="Time" aria-label="Time">
+        <input class="what" id="evwhat" placeholder="Enter order" aria-label="Event">
+        <button type="submit">Log</button>
+      </form>
+    </div>
+  </section>
+</main>
+
+<dialog id="cityDlg">
+  <form class="dbody" id="cityform" method="dialog">
+    <h3>Weather city</h3>
+    <div>
+      <label for="cityin">City</label>
+      <input type="text" id="cityin" placeholder="e.g. Denver" autocomplete="off">
+      <div id="msg"></div>
+    </div>
+    <div class="dbtns">
+      <button type="button" id="cityCancel">Cancel</button>
+      <button type="submit" class="go">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="setDlg">
+  <div class="dbody">
+    <h3>Settings</h3>
+
+    <div>
+      <h4>Colors</h4>
+      <div class="swatches" id="swatches"></div>
+      <div class="hint" style="margin:10px 0 6px">Or pick your own:</div>
+      <div class="pick">
+        <label>Background<input type="color" id="cBg"></label>
+        <label>Panels<input type="color" id="cTile"></label>
+        <label>Accent 1<input type="color" id="cA1"></label>
+        <label>Accent 2<input type="color" id="cA2"></label>
+      </div>
+    </div>
+
+    <div>
+      <h4>Stocks</h4>
+      <label for="symIn">Symbols (separated by commas)</label>
+      <input type="text" id="symIn" placeholder="AAPL, MSFT, VOO" autocomplete="off" spellcheck="false">
+      <div class="hint">Type regular tickers like AAPL or KO. If one doesn't show up, add its exchange, like NYSE:KO. Prices are live but can be a few minutes behind.</div>
+    </div>
+
+    <div>
+      <h4>Podcast</h4>
+      <label for="spIn">Spotify link</label>
+      <input type="text" id="spIn" placeholder="https://open.spotify.com/show/…" autocomplete="off" spellcheck="false">
+      <div class="hint">In Spotify, open a podcast (or episode), choose Share, then Copy link. Signed in to Spotify in the same browser, episodes play in full. Otherwise you get 30-second previews.</div>
+    </div>
+
+    <div class="dbtns"><button type="button" class="go" id="setDone">Done</button></div>
+  </div>
+</dialog>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var store = {
+    get: function (k, d) { try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+    set: function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+  };
+  function openDlg(d) { try { d.showModal(); } catch (e) { d.setAttribute("open", ""); } }
+
+  /* ---------- settings / colors ---------- */
+  var PRESETS = [
+    { id: "station", name: "Station", bg: "#04070a", tile: "#0d151b", a1: "#3fd0ff", a2: "#1b6f8f" },
+    { id: "alert",   name: "Alert",   bg: "#0a0405", tile: "#1a0d0f", a1: "#ff4a3d", a2: "#7a1510" },
+    { id: "hangar",  name: "Hangar",  bg: "#0a0704", tile: "#18120b", a1: "#ffb02e", a2: "#8a4a05" },
+    { id: "reactor", name: "Reactor", bg: "#040a07", tile: "#0b1710", a1: "#3dff9a", a2: "#12734a" },
+    { id: "void",    name: "Void",    bg: "#07060c", tile: "#121020", a1: "#b48cff", a2: "#5a3aa8" },
+    { id: "light",   name: "Daylight",bg: "#d8dde2", tile: "#f3f6f8", a1: "#1b6f8f", a2: "#0b3f56" }
+  ];
+  var cfg = store.get("cfg", null) || {};
+  cfg.colors = cfg.colors || { bg: PRESETS[0].bg, tile: PRESETS[0].tile, a1: PRESETS[0].a1, a2: PRESETS[0].a2 };
+  cfg.symbols = cfg.symbols || ["AAPL", "MSFT", "SPY"];
+  cfg.key = cfg.key || "";
+  cfg.spotify = cfg.spotify || "";
+  function save() { store.set("cfg", cfg); }
+
+  function lum(hex) {
+    var n = parseInt(hex.slice(1), 16), c = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(function (v) {
+      v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  }
+  function applyColors() {
+    var c = cfg.colors, r = document.documentElement.style;
+    r.setProperty("--bg", c.bg); r.setProperty("--tile", c.tile);
+    r.setProperty("--a1", c.a1); r.setProperty("--a2", c.a2);
+    var accentL = (lum(c.a1) + lum(c.a2)) / 2;
+    r.setProperty("--on-accent", accentL > 0.3 ? "#241609" : "#fff7ea");
+    var dark = lum(c.tile) < 0.35;
+    r.setProperty("--tile-ink", dark ? "#f4eadb" : "#2a1c10");
+    r.setProperty("--muted", dark ? "#b9a994" : "#6b5a48");
+    r.setProperty("color-scheme", lum(c.bg) < 0.35 ? "dark" : "light");
+    $("cBg").value = c.bg; $("cTile").value = c.tile; $("cA1").value = c.a1; $("cA2").value = c.a2;
+    if (window.__stocksReady) { clearTimeout(window.__st); window.__st = setTimeout(drawStocks, 400); }
+    Array.prototype.forEach.call($("swatches").children, function (b) {
+      var p = PRESETS[b.getAttribute("data-i")];
+      b.setAttribute("aria-pressed", String(p.bg === c.bg && p.tile === c.tile && p.a1 === c.a1 && p.a2 === c.a2));
+    });
+  }
+  PRESETS.forEach(function (p, i) {
+    var b = document.createElement("button"); b.type = "button"; b.className = "sw"; b.setAttribute("data-i", i);
+    b.innerHTML = '<span class="chip" style="background:linear-gradient(135deg,' + p.a1 + "," + p.a2 + ');box-shadow:inset 0 0 0 5px ' + p.tile + '"></span>' + p.name;
+    b.onclick = function () { cfg.colors = { bg: p.bg, tile: p.tile, a1: p.a1, a2: p.a2 }; save(); applyColors(); };
+    $("swatches").appendChild(b);
+  });
+  [["cBg", "bg"], ["cTile", "tile"], ["cA1", "a1"], ["cA2", "a2"]].forEach(function (m) {
+    $(m[0]).oninput = function (e) { cfg.colors[m[1]] = e.target.value; save(); applyColors(); };
+  });
+  applyColors();
+
+  $("settingsBtn").onclick = function () {
+    $("symIn").value = cfg.symbols.join(", "); $("spIn").value = cfg.spotify;
+    openDlg($("setDlg"));
+  };
+  $("setDone").onclick = function () { $("setDlg").close(); };
+  $("symIn").onchange = function (e) {
+    cfg.symbols = e.target.value.split(/[\s,]+/).map(function (s) { return s.trim().toUpperCase(); }).filter(Boolean).slice(0, 8);
+    e.target.value = cfg.symbols.join(", "); save(); drawStocks();
+  };
+  $("spIn").onchange = function (e) { cfg.spotify = e.target.value.trim(); save(); drawPodcast(); };
+
+  /* ---------- analog clock ---------- */
+  var face = $("face"), NS = "http://www.w3.org/2000/svg";
+  function el(n, a) { var e = document.createElementNS(NS, n); for (var k in a) e.setAttribute(k, a[k]); face.appendChild(e); return e; }
+  el("circle", { cx: 100, cy: 100, r: 94, class: "face-ring" });
+  el("circle", { cx: 100, cy: 100, r: 70, fill: "none", stroke: "var(--a1)", "stroke-opacity": ".18", "stroke-width": 1, "stroke-dasharray": "2 5" });
+  for (var i = 0; i < 60; i++) {
+    var big = i % 5 === 0, ang = i * 6 * Math.PI / 180, r1 = big ? 78 : 86, r2 = 91;
+    el("line", { class: "tk", x1: 100 + Math.sin(ang) * r1, y1: 100 - Math.cos(ang) * r1, x2: 100 + Math.sin(ang) * r2, y2: 100 - Math.cos(ang) * r2,
+      "stroke-width": big ? 3 : 1, opacity: big ? 1 : .55 });
+  }
+  var hH = el("line", { class: "hand", x1: 100, y1: 100, x2: 100, y2: 56, "stroke-width": 5 });
+  var hM = el("line", { class: "hand", x1: 100, y1: 100, x2: 100, y2: 32, "stroke-width": 3.5 });
+  var hS = el("line", { class: "sec", x1: 100, y1: 112, x2: 100, y2: 24, "stroke-width": 1.8 });
+  el("circle", { class: "hub", cx: 100, cy: 100, r: 4.5 });
+
+  function tick() {
+    var d = new Date(), s = d.getSeconds(), m = d.getMinutes() + s / 60, h = (d.getHours() % 12) + m / 60;
+    hS.setAttribute("transform", "rotate(" + (s * 6) + " 100 100)");
+    hM.setAttribute("transform", "rotate(" + (m * 6) + " 100 100)");
+    hH.setAttribute("transform", "rotate(" + (h * 30) + " 100 100)");
+    $("digital").textContent = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    $("dow").textContent = d.toLocaleDateString([], { weekday: "long" });
+    $("dnum").textContent = d.getDate();
+    $("dmon").textContent = d.toLocaleDateString([], { month: "long", year: "numeric" });
+  }
+  tick(); setInterval(tick, 1000);
+
+  /* ---------- weather (Open-Meteo, free, no key) ---------- */
+  var loc = store.get("loc", { name: "Grand Junction, CO", lat: 39.0639, lon: -108.5506 });
+  var WC = {
+    0: ["Clear", "☀️"], 1: ["Mostly clear", "🌤️"], 2: ["Partly cloudy", "⛅"], 3: ["Overcast", "☁️"],
+    45: ["Fog", "🌫️"], 48: ["Fog", "🌫️"], 51: ["Light drizzle", "🌦️"], 53: ["Drizzle", "🌦️"], 55: ["Heavy drizzle", "🌧️"],
+    61: ["Light rain", "🌧️"], 63: ["Rain", "🌧️"], 65: ["Heavy rain", "🌧️"], 71: ["Light snow", "🌨️"], 73: ["Snow", "❄️"], 75: ["Heavy snow", "❄️"],
+    77: ["Snow grains", "🌨️"], 80: ["Showers", "🌦️"], 81: ["Showers", "🌧️"], 82: ["Heavy showers", "🌧️"], 85: ["Snow showers", "🌨️"], 86: ["Snow showers", "🌨️"],
+    95: ["Thunderstorm", "⛈️"], 96: ["Thunderstorm", "⛈️"], 99: ["Thunderstorm", "⛈️"]
+  };
+  function wc(c) { return WC[c] || ["—", "·"]; }
+  function drawHours(rows) {
+    var box = $("hours"); box.innerHTML = "";
+    rows.forEach(function (r) {
+      var d = document.createElement("div"); d.className = "hr";
+      d.innerHTML = '<div class="t">' + r.t + '</div><div class="ic" aria-hidden="true">' + r.ic + '</div><div class="d">' + r.d + "</div>";
+      box.appendChild(d);
+    });
+  }
+  function weatherDown() {
+    $("temp").textContent = "--°"; $("cond").textContent = "Weather unavailable right now"; $("hilo").textContent = "";
+    var now = new Date(), rows = [];
+    for (var i = 1; i <= 5; i++) { var t = new Date(now.getTime() + i * 3600e3); rows.push({ t: t.toLocaleTimeString([], { hour: "numeric" }), ic: "·", d: "--°" }); }
+    drawHours(rows);
+  }
+  function loadWeather() {
+    $("place").textContent = loc.name;
+    var u = "https://api.open-meteo.com/v1/forecast?latitude=" + loc.lat + "&longitude=" + loc.lon +
+      "&current=temperature_2m,weather_code&hourly=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min" +
+      "&temperature_unit=fahrenheit&timezone=auto&forecast_days=2";
+    fetch(u).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (j) {
+      var c = j.current; $("temp").textContent = Math.round(c.temperature_2m) + "°";
+      $("cond").textContent = wc(c.weather_code)[0];
+      $("hilo").innerHTML = '<span class="hl">H ' + Math.round(j.daily.temperature_2m_max[0]) + "° · L " + Math.round(j.daily.temperature_2m_min[0]) + "°</span>";
+      var idx = 0, nowT = c.time;
+      for (var i = 0; i < j.hourly.time.length; i++) { if (j.hourly.time[i] > nowT) { idx = i; break; } }
+      var rows = [];
+      for (var k = 0; k < 5; k++) {
+        var t = new Date(j.hourly.time[idx + k]);
+        rows.push({ t: t.toLocaleTimeString([], { hour: "numeric" }), ic: wc(j.hourly.weather_code[idx + k])[1], d: Math.round(j.hourly.temperature_2m[idx + k]) + "°" });
+      }
+      drawHours(rows);
+    }).catch(weatherDown);
+  }
+  loadWeather(); setInterval(loadWeather, 15 * 60 * 1000);
+
+  $("chg").onclick = function () { $("msg").textContent = ""; $("cityin").value = ""; openDlg($("cityDlg")); $("cityin").focus(); };
+  $("cityCancel").onclick = function () { $("cityDlg").close(); };
+  $("cityform").onsubmit = function (e) {
+    e.preventDefault();
+    var q = $("cityin").value.trim(); if (!q) return;
+    $("msg").textContent = "Searching…";
+    fetch("https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&name=" + encodeURIComponent(q))
+      .then(function (r) { return r.json(); }).then(function (j) {
+        if (!j.results || !j.results.length) { $("msg").textContent = "No city found. Check the spelling."; return; }
+        var r = j.results[0];
+        loc = { name: r.name + (r.admin1 ? ", " + r.admin1 : ""), lat: r.latitude, lon: r.longitude };
+        store.set("loc", loc); $("cityDlg").close(); loadWeather();
+      }).catch(function () { $("msg").textContent = "Couldn't reach the weather service."; });
+  };
+
+  /* ---------- stocks (TradingView embed, free, no key) ---------- */
+  function drawStocks() {
+    var box = $("tv"); box.innerHTML = "";
+    if (!cfg.symbols.length) { var n = document.createElement("div"); n.className = "note"; n.textContent = "No symbols yet. Open Settings to add some."; box.appendChild(n); return; }
+    var wrap = document.createElement("div"); wrap.className = "tradingview-widget-container";
+    var inner = document.createElement("div"); inner.className = "tradingview-widget-container__widget"; wrap.appendChild(inner);
+    var sc = document.createElement("script");
+    sc.src = "https://s3.tradingview.com/external-embedding/embed-widget-market-quotes.js";
+    sc.async = true;
+    sc.text = JSON.stringify({
+      width: "100%", height: "100%", locale: "en", showSymbolLogo: false, isTransparent: true,
+      colorTheme: lum(cfg.colors.tile) < 0.35 ? "dark" : "light",
+      symbolsGroups: [{ name: "Watchlist", symbols: cfg.symbols.map(function (t) { return { name: t, displayName: t.replace(/^.*:/, "") }; }) }]
+    });
+    wrap.appendChild(sc); box.appendChild(wrap);
+  }
+  drawStocks(); window.__stocksReady = true;
+
+  /* ---------- podcast (Spotify embed) ---------- */
+  function drawPodcast() {
+    var box = $("pod"); box.innerHTML = '<div class="lbl">Audio archive</div>';
+    var m = /open\.spotify\.com\/(?:intl-[a-z-]+\/)?(show|episode|playlist|album|track)\/([A-Za-z0-9]+)/.exec(cfg.spotify || "");
+    if (m) {
+      var f = document.createElement("iframe");
+      f.src = "https://open.spotify.com/embed/" + m[1] + "/" + m[2] + "?utm_source=generator&theme=0";
+      f.title = "Spotify player";
+      f.allow = "autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture";
+      f.loading = "lazy";
+      box.appendChild(f);
+      return;
+    }
+    var d = document.createElement("div"); d.className = "empty";
+    d.innerHTML = "<p></p><button type=\"button\">Select audio</button>";
+    d.querySelector("p").textContent = cfg.spotify ? "That doesn't look like a Spotify link. Paste a link to a show or episode from Spotify's Share menu." : "No audio source loaded. Paste a Spotify podcast link in Settings and it plays here.";
+    d.querySelector("button").onclick = function () { $("settingsBtn").click(); };
+    box.appendChild(d);
+  }
+  drawPodcast();
+
+  /* ---------- photo slideshow ---------- */
+  function scene(sky, far, near, sun) {
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" preserveAspectRatio="xMidYMid slice">' +
+      '<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + sky[0] + '"/><stop offset="1" stop-color="' + sky[1] + '"/></linearGradient></defs>' +
+      '<rect width="800" height="600" fill="url(#g)"/><circle cx="560" cy="190" r="46" fill="' + sun + '" opacity=".9"/>' +
+      '<path d="M0 360 C140 290 260 330 380 300 C520 262 660 330 800 290 L800 600 L0 600Z" fill="' + far + '"/>' +
+      '<path d="M0 440 C160 390 300 450 460 410 C600 376 700 430 800 400 L800 600 L0 600Z" fill="' + near + '"/></svg>';
+    return "url(\"data:image/svg+xml," + encodeURIComponent(svg) + "\")";
+  }
+  var slides = [
+    scene(["#f7c98b", "#fbe6c4"], "#c58a4e", "#8c5a2b", "#fff3d6"),
+    scene(["#9ec6e6", "#e8f2f8"], "#6f9a7a", "#41704f", "#fffbe8"),
+    scene(["#e9a07a", "#f8d9b8"], "#a8604a", "#6b3a2f", "#fff0d0")
+  ];
+  var holder = $("photo"), layers = [], cur = 0;
+  function mount() {
+    layers.forEach(function (l) { l.remove(); }); layers = [];
+    slides.forEach(function (bg) { var d = document.createElement("div"); d.className = "slide"; d.style.backgroundImage = bg; holder.insertBefore(d, holder.firstChild); layers.push(d); });
+    cur = 0; layers[0].classList.add("on");
+  }
+  mount();
+  setInterval(function () {
+    if (layers.length < 2) return;
+    layers[cur].classList.remove("on"); cur = (cur + 1) % layers.length; layers[cur].classList.add("on");
+  }, 8000);
+  $("files").onchange = function (e) {
+    var fs = Array.prototype.slice.call(e.target.files || []);
+    if (!fs.length) return;
+    slides = fs.map(function (f) { return "url(" + URL.createObjectURL(f) + ")"; });
+    mount();
+  };
+
+  /* ---------- today list ---------- */
+  var events = store.get("events", [
+    { t: "3:30 PM", x: "Piano lesson (example, tap × to remove)" },
+    { t: "6:00 PM", x: "Pick up groceries (example)" }
+  ]);
+  function drawEvents() {
+    var ul = $("evlist"); ul.innerHTML = "";
+    if (!events.length) { var p = document.createElement("li"); p.className = "empty"; p.textContent = "Nothing added for today."; ul.appendChild(p); return; }
+    events.forEach(function (ev, i) {
+      var li = document.createElement("li");
+      var a = document.createElement("span"); a.className = "tm"; a.textContent = ev.t || "";
+      var b = document.createElement("span"); b.className = "tx"; b.textContent = ev.x;
+      var x = document.createElement("button"); x.type = "button"; x.textContent = "×"; x.setAttribute("aria-label", "Remove " + ev.x);
+      x.onclick = function () { events.splice(i, 1); store.set("events", events); drawEvents(); };
+      li.appendChild(a); li.appendChild(b); li.appendChild(x); ul.appendChild(li);
+    });
+  }
+  drawEvents();
+  $("evform").onsubmit = function (e) {
+    e.preventDefault();
+    var x = $("evwhat").value.trim(); if (!x) return;
+    events.push({ t: $("evwhen").value.trim(), x: x }); store.set("events", events);
+    $("evwhat").value = ""; $("evwhen").value = ""; drawEvents();
+  };
+
+  /* ---------- fullscreen ---------- */
+  $("fs").onclick = function () {
+    try { var p = document.documentElement.requestFullscreen && document.documentElement.requestFullscreen(); if (p && p.catch) p.catch(function () {}); } catch (e) {}
+  };
+})();
+</script>
+</body>
+</html>
